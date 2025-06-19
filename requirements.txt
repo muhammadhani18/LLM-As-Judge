@@ -1,1 +1,7 @@
 fastapi[standard]
+click>=8.0
+openai
+pylint
+pytest
+bandit
+pytest-json-report
