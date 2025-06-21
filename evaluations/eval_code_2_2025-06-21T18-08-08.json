@@ -1,0 +1,20 @@
+{
+  "prompt": "Summarize the causes of World War I.",
+  "responses": {
+    "gpt-4": "World War I was caused by a complex set of factors including:\n\n1. Nationalism: Various nationalistic movements in Europe, particularly in the Balkans, created tensions.\n2. Imperialism: Competition for colonial territories among European powers led to conflict.\n3. Militarism: The arms race and military buildup among countries, particularly Germany and Britain, escalated tensions.\n4. Alliance System: The complex system of alliances between different countries made conflicts between two countries a potential trigger for a wider war.\n5. Assassination of Archduke Franz Ferdinand: The assassination of the heir to the Austro-Hungarian Empire by a Serbian nationalist in 1914 was the immediate trigger that led to the war. It caused Austria-Hungary to declare war on Serbia, activating the system of alliances.",
+    "gpt-3.5-turbo": "World War I was caused by a complex interplay of factors, including militarism, alliances, imperialism, and nationalism. The assassination of Archduke Franz Ferdinand of Austria-Hungary in 1914 acted as a trigger that set off a chain reaction, leading to the outbreak of war."
+  },
+  "scores": {
+    "gpt-4": {
+      "correctness": 5,
+      "relevance": 5
+    },
+    "gpt-3.5-turbo": {
+      "correctness": 4,
+      "relevance": 4
+    },
+    "winner": "gpt-4"
+  },
+  "winner": "gpt-4",
+  "prompt_id": "95fe5b6d-590f-435b-bad5-ac541a72de99"
+}

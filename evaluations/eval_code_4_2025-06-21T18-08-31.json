@@ -1,0 +1,20 @@
+{
+  "prompt": "Describe the lifecycle of a butterfly.",
+  "responses": {
+    "gpt-4": "The life cycle of a butterfly consists of four stages:\n\n1. Egg: The life cycle begins when a female butterfly lays her eggs, usually on leaves or stems of plants.\n\n2. Larva (Caterpillar): Once the egg hatches, a caterpillar or larva emerges. During this phase, the caterpillar's main job is to eat and grow. As it grows, it sheds its skin or molts several times.\n\n3. Pupa (Chrysalis): After a period of intense feeding and growth, the caterpillar forms a cocoon or chrysalis around itself, becoming a pupa. In this stage, it undergoes a transformation, or metamorphosis.\n\n4. Adult Butterfly:  Finally, an adult butterfly emerges from the chrysalis. It then continues the cycle by finding a mate and laying eggs.",
+    "gpt-3.5-turbo": "The lifecycle of a butterfly consists of four stages: egg, larva (caterpillar), pupa (chrysalis), and adult butterfly. A female butterfly lays eggs on a host plant, which hatch into caterpillars. The caterpillars feed and grow, eventually forming a pupa where they undergo metamorphosis. Inside the chrysalis, the caterpillar transforms into a butterfly. The adult butterfly emerges from the chrysalis, its wings expand and dry, and it is ready to fly and reproduce."
+  },
+  "scores": {
+    "gpt-4": {
+      "correctness": 5,
+      "relevance": 5
+    },
+    "gpt-3.5-turbo": {
+      "correctness": 5,
+      "relevance": 5
+    },
+    "winner": "gpt-4"
+  },
+  "winner": "gpt-4",
+  "prompt_id": "d3f1599c-2541-4ae8-932c-831f480de39c"
+}

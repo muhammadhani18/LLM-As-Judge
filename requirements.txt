@@ -6,3 +6,4 @@ pytest
 bandit
 pytest-json-report
 python-dotenv
+radon

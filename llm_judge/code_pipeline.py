@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import openai
 from .evaluator import Evaluator
 from openai import OpenAI
+import re
+from radon.complexity import cc_visit
 
 load_dotenv()
 
@@ -35,15 +37,37 @@ class CodePipeline(Evaluator):
         for name, code in generated.items():
             print(f"\n🔍 Evaluating model: {name}")
             lint_info = self._run_linter(code)
-
+            style_info = self._run_style_analysis(code)    
             if not lint_info["syntax_ok"]:
                 scores[name] = {
                     "status": "syntax_error",
                     "score": 0,
-                    "details": lint_info
+                    "details": lint_info,
+                    "style": style_info 
                 }
                 continue
+            else:
+                tests = self._generate_tests(prompt, code)
+                passed, failed = self._run_tests(code, tests)
 
+                total = passed + failed
+                pass_rate = passed / total if total > 0 else 0
+                security_penalty = lint_info["security_issues"] * 0.1
+
+                # combine functionality & style
+                w_func, w_style = 0.7, 0.3
+                func_comp = max(pass_rate - security_penalty, 0)
+                style_comp = style_info["style_score"]
+                final_score = round(w_func * func_comp + w_style * style_comp, 3)
+
+                scores[name] = {
+                    "status": "evaluated",
+                    "score": final_score,
+                    "tests": {"passed": passed, "failed": failed},
+                    "lint": lint_info,
+                    "style": style_info
+                }
+                
             try:
                 print("🤖 Asking Judge LLM to generate tests...")
                 tests = self._generate_tests(prompt, code)
@@ -54,7 +78,17 @@ class CodePipeline(Evaluator):
                 total = passed + failed
                 pass_rate = passed / total if total > 0 else 0
                 security_penalty = lint_info["security_issues"] * 0.1
-                final_score = round(max(pass_rate - security_penalty, 0), 3)
+                                # weights (tune as you wish)
+                w_func = 0.7    # weight for functionality (tests & security)
+                w_style = 0.3   # weight for style
+
+                func_component = max(pass_rate - security_penalty, 0)
+                style_component = style_info["style_score"]
+
+                combined_score = round((w_func * func_component) + (w_style * style_component), 3)
+
+                final_score = combined_score
+
 
                 scores[name] = {
                     "status": "evaluated",
@@ -150,11 +184,54 @@ class CodePipeline(Evaluator):
             "security_issues": security_issues,
             "bandit_output": bandit_proc.stdout,
         }
+    
+    def _run_style_analysis(self, code: str) -> Dict[str, Any]:
+        """
+        Returns:
+          - pylint_score: float (0–10)
+          - average_complexity: float (cyclomatic complexity)
+          - style_score: float (0–1), higher is better
+        """
+        # 1) Write code to temp file
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+            f.write(code)
+            path = f.name
+
+        # 2) Pylint: get overall score
+        pylint_proc = subprocess.run(
+            ["pylint", path, "--disable=all", "--enable=score"],
+            capture_output=True, text=True
+        )
+        # extract “Your code has been rated at 8.50/10”
+        match = re.search(r"rated at ([0-9\.]+)/10", pylint_proc.stdout or "")
+        pylint_score = float(match.group(1)) if match else 0.0
+
+        # 3) Radon cyclomatic complexity
+        try:
+            blocks = cc_visit(code)
+            # average complexity across functions
+            complexities = [b.complexity for b in blocks]
+            avg_cc = sum(complexities) / len(complexities) if complexities else 0.0
+        except Exception:
+            avg_cc = 0.0
+
+        # 4) Normalize style: penalize high complexity
+        # Let’s define style_score = (pylint_score/10) * (1 / (1 + avg_cc/10))
+        style_score = (pylint_score / 10) * (1 / (1 + avg_cc / 10))
+
+        # Clean up
+        try: os.remove(path)
+        except OSError: pass
+
+        return {
+            "pylint_score": round(pylint_score, 2),
+            "average_complexity": round(avg_cc, 2),
+            "style_score": round(style_score, 3)
+        }
 
     def _generate_tests(self, prompt: str, code: str) -> str:
         """Ask the judge LLM to write pytest tests for this code snippet."""
-        print(f"prompt: {prompt}")
-        print(f"code: {code}")
+        
         test_prompt = f"""
 You are an expert test writer. Given the prompt:
 {prompt}
