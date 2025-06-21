@@ -6,7 +6,7 @@ This project evaluates code and text generation capabilities of multiple LLMs us
 
 ## 📐 Architecture Overview
 
-![Alt text]("flow_diagram.png")
+![Architecture Flow](images/flow_diagram.png)
 
 
 ### CLI Interface
