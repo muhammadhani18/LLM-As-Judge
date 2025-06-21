@@ -1,0 +1,3 @@
+python -m llm_judge.cli "Explain the benefits of regular exercise" -m gpt-4 -m gpt-3.5-turbo -t text
+python -m llm_judge.cli "Write a Python function to validate email addresses" -m gpt-4 -m gpt-3.5-turbo -t code
+python -m llm_judge.cli "Summarize the impact of climate change on agriculture" -m gpt-4 -m gpt-3.5-turbo -t text --save
