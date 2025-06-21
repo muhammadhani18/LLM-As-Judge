@@ -1,0 +1,33 @@
+{
+  "prompt": "Write a function to count word frequency in a string.",
+  "results": {
+    "gpt-4": {
+      "status": "evaluated",
+      "score": 0.0,
+      "tests": {
+        "passed": 0,
+        "failed": 10
+      },
+      "lint": {
+        "syntax_ok": true,
+        "security_issues": 0,
+        "bandit_output": ""
+      }
+    },
+    "gpt-3.5-turbo": {
+      "status": "evaluated",
+      "score": 0.0,
+      "tests": {
+        "passed": 0,
+        "failed": 10
+      },
+      "lint": {
+        "syntax_ok": true,
+        "security_issues": 0,
+        "bandit_output": ""
+      }
+    }
+  },
+  "winner": "gpt-4",
+  "prompt_id": "81a2ec19-64ab-49e7-8d05-898fd1ea34ec"
+}
