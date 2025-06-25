@@ -19,12 +19,56 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI() 
 
+# Cost per 1K tokens (as of 2024)
+COST_PER_1K_TOKENS = {
+    "gpt-4": {"input": 0.03, "output": 0.06},
+    "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
+    "gpt-3.5-turbo-16k": {"input": 0.003, "output": 0.004}
+}
 
 class CodePipeline(Evaluator):
     def __init__(self, models: List[str], judge_model: str = "gpt-4"):
         self.models = models
         self.judge_model = judge_model
+        self.total_cost = 0.0
+        self.cost_breakdown = {
+            "model_calls": {},
+            "judge_calls": {},
+            "total": 0.0
+        }
         openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    def _calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        """Calculate the cost for a model call."""
+        if model not in COST_PER_1K_TOKENS:
+            # Default to gpt-3.5-turbo pricing for unknown models
+            model = "gpt-3.5-turbo"
+        
+        costs = COST_PER_1K_TOKENS[model]
+        input_cost = (input_tokens / 1000) * costs["input"]
+        output_cost = (output_tokens / 1000) * costs["output"]
+        return input_cost + output_cost
+
+    def _track_cost(self, model: str, input_tokens: int, output_tokens: int, call_type: str = "model"):
+        """Track the cost for a model call."""
+        cost = self._calculate_cost(model, input_tokens, output_tokens)
+        self.total_cost += cost
+        
+        if call_type == "judge":
+            if model not in self.cost_breakdown["judge_calls"]:
+                self.cost_breakdown["judge_calls"][model] = {"calls": 0, "cost": 0.0}
+            self.cost_breakdown["judge_calls"][model]["calls"] += 1
+            self.cost_breakdown["judge_calls"][model]["cost"] += cost
+        else:
+            if model not in self.cost_breakdown["model_calls"]:
+                self.cost_breakdown["model_calls"][model] = {"calls": 0, "cost": 0.0}
+            self.cost_breakdown["model_calls"][model]["calls"] += 1
+            self.cost_breakdown["model_calls"][model]["cost"] += cost
+        
+        self.cost_breakdown["total"] = self.total_cost
+        
+        print(f"💰 Cost for {model} ({call_type}): ${cost:.4f} ({input_tokens} input, {output_tokens} output tokens)")
 
     def evaluate(self, prompt: str, responses: Dict[str, str] = None) -> Dict[str, Any]:
         generated = responses or self._invoke_models(prompt)
@@ -85,6 +129,9 @@ class CodePipeline(Evaluator):
         # Display detailed reasoning
         self._display_reasoning(scores, judge_analysis)
 
+        # Display cost summary
+        self._display_cost_summary()
+
         # Pick winner
         best = max(scores.items(), key=lambda kv: kv[1]["score"] if kv[1]["status"] == "evaluated" else -1, default=(None, {}))
         winner = best[0] if best[0] else "No valid code found"
@@ -93,7 +140,8 @@ class CodePipeline(Evaluator):
             "prompt": prompt,
             "results": scores,
             "winner": winner,
-            "judge_analysis": judge_analysis
+            "judge_analysis": judge_analysis,
+            "cost_breakdown": self.cost_breakdown
         }
 
     def _invoke_models(self, prompt: str) -> Dict[str, str]:
@@ -109,6 +157,14 @@ class CodePipeline(Evaluator):
                 temperature=0,
             )
             raw = resp.choices[0].message.content
+
+            # Track cost
+            self._track_cost(
+                model, 
+                resp.usage.prompt_tokens, 
+                resp.usage.completion_tokens,
+                "model"
+            )
 
             # Clean out markdown and extra explanation
             cleaned = self._extract_code(raw)
@@ -249,6 +305,15 @@ Return ONLY the test function definition and body, no imports, no markdown, exac
             temperature=0,
             max_tokens=500  # Limit the response size even more
         )
+        
+        # Track cost for judge model
+        self._track_cost(
+            self.judge_model,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            "judge"
+        )
+        
         tests = response.choices[0].message.content
         
         # Clean up the response to remove any markdown and imports
@@ -443,6 +508,14 @@ Only return valid JSON.
                 temperature=0
             )
             
+            # Track cost for judge model
+            self._track_cost(
+                self.judge_model,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                "judge"
+            )
+            
             judgment = response.choices[0].message.content
             print("\n🧠 Judge Analysis Output:\n", judgment)
             
@@ -450,6 +523,23 @@ Only return valid JSON.
         except Exception as e:
             print(f"Error getting judge analysis: {e}")
             return {}
+
+    def _display_cost_summary(self):
+        """Display a summary of all costs incurred during the evaluation."""
+        print("\n" + "="*60)
+        print("💰 COST SUMMARY")
+        print("="*60)
+        
+        print(f"\n📊 MODEL CALLS:")
+        for model, data in self.cost_breakdown["model_calls"].items():
+            print(f"   {model}: {data['calls']} calls, ${data['cost']:.4f}")
+        
+        print(f"\n🧠 JUDGE CALLS:")
+        for model, data in self.cost_breakdown["judge_calls"].items():
+            print(f"   {model}: {data['calls']} calls, ${data['cost']:.4f}")
+        
+        print(f"\n💵 TOTAL COST: ${self.total_cost:.4f}")
+        print("="*60)
 
     def _display_reasoning(self, scores: Dict[str, Any], judge_analysis: Dict[str, Any]):
         """Display detailed reasoning from the judge in a readable format."""
