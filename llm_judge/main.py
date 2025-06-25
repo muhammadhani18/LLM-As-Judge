@@ -1,3 +1,6 @@
+"""
+Main entry point for LLM Judge evaluation framework.
+"""
 import click
 import json
 import os
@@ -29,15 +32,21 @@ from .pipelines.text_pipeline import TextPipeline
     type=click.Path(exists=True),
     help="Path to a JSON file containing a list of prompts for batch evaluation."
 )
+@click.option(
+    "--judge-model",
+    default="gpt-4",
+    help="Model to use as judge (default: gpt-4)."
+)
 
-def main(prompt, model, type, save, batch_file):
+def main(prompt, model, type, save, batch_file, judge_model):
+    """LLM Judge - Multi-LLM evaluation framework."""
     models = list(model)
 
     if batch_file:
         with open(batch_file, "r") as f:
             prompts = json.load(f)
 
-        pipeline = CodePipeline(models=models) if type == "code" else TextPipeline(models=models)
+        pipeline = CodePipeline(models=models, judge_model=judge_model) if type == "code" else TextPipeline(models=models, judge_model=judge_model)
         all_results = []
         wins = {}
 
@@ -65,7 +74,7 @@ def main(prompt, model, type, save, batch_file):
             click.echo(f"🏆 {model}: {count} wins")
 
     else:
-        pipeline = CodePipeline(models=models) if type == "code" else TextPipeline(models=models)
+        pipeline = CodePipeline(models=models, judge_model=judge_model) if type == "code" else TextPipeline(models=models, judge_model=judge_model)
         result = pipeline.evaluate(prompt)
 
         click.echo("\n✅ Final Result:\n")
@@ -80,4 +89,4 @@ def main(prompt, model, type, save, batch_file):
             click.echo(f"💾 Evaluation saved to: {filename}")
 
 if __name__ == "__main__":
-    main()
+    main() 
