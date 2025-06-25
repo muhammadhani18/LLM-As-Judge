@@ -38,6 +38,7 @@ class CodePipeline(Evaluator):
             print(f"\n🔍 Evaluating model: {name}")
             lint_info = self._run_linter(code)
             style_info = self._run_style_analysis(code)    
+            
             if not lint_info["syntax_ok"]:
                 scores[name] = {
                     "status": "syntax_error",
@@ -46,15 +47,19 @@ class CodePipeline(Evaluator):
                     "style": style_info 
                 }
                 continue
-            else:
+
+            try:
+                print("🤖 Asking Judge LLM to generate tests...")
                 tests = self._generate_tests(prompt, code)
+
+                print("⚙️ Running unit tests...")
                 passed, failed = self._run_tests(code, tests)
 
                 total = passed + failed
                 pass_rate = passed / total if total > 0 else 0
                 security_penalty = lint_info["security_issues"] * 0.1
 
-                # combine functionality & style
+                # Combine functionality & style
                 w_func, w_style = 0.7, 0.3
                 func_comp = max(pass_rate - security_penalty, 0)
                 style_comp = style_info["style_score"]
@@ -67,41 +72,18 @@ class CodePipeline(Evaluator):
                     "lint": lint_info,
                     "style": style_info
                 }
-                
-            try:
-                print("🤖 Asking Judge LLM to generate tests...")
-                tests = self._generate_tests(prompt, code)
-
-                print("⚙️ Running unit tests...")
-                passed, failed = self._run_tests(code, tests)
-
-                total = passed + failed
-                pass_rate = passed / total if total > 0 else 0
-                security_penalty = lint_info["security_issues"] * 0.1
-                                # weights (tune as you wish)
-                w_func = 0.7    # weight for functionality (tests & security)
-                w_style = 0.3   # weight for style
-
-                func_component = max(pass_rate - security_penalty, 0)
-                style_component = style_info["style_score"]
-
-                combined_score = round((w_func * func_component) + (w_style * style_component), 3)
-
-                final_score = combined_score
-
-
-                scores[name] = {
-                    "status": "evaluated",
-                    "score": final_score,
-                    "tests": {"passed": passed, "failed": failed},
-                    "lint": lint_info
-                }
             except Exception as e:
                 scores[name] = {
                     "status": "error",
                     "score": 0,
                     "error": str(e)
                 }
+
+        # Get detailed reasoning from judge
+        judge_analysis = self._get_judge_analysis(prompt, generated, scores)
+        
+        # Display detailed reasoning
+        self._display_reasoning(scores, judge_analysis)
 
         # Pick winner
         best = max(scores.items(), key=lambda kv: kv[1]["score"] if kv[1]["status"] == "evaluated" else -1, default=(None, {}))
@@ -110,7 +92,8 @@ class CodePipeline(Evaluator):
         return {
             "prompt": prompt,
             "results": scores,
-            "winner": winner
+            "winner": winner,
+            "judge_analysis": judge_analysis
         }
 
     def _invoke_models(self, prompt: str) -> Dict[str, str]:
@@ -202,7 +185,7 @@ class CodePipeline(Evaluator):
             ["pylint", path, "--disable=all", "--enable=score"],
             capture_output=True, text=True
         )
-        # extract “Your code has been rated at 8.50/10”
+        # extract "Your code has been rated at 8.50/10"
         match = re.search(r"rated at ([0-9\.]+)/10", pylint_proc.stdout or "")
         pylint_score = float(match.group(1)) if match else 0.0
 
@@ -216,7 +199,7 @@ class CodePipeline(Evaluator):
             avg_cc = 0.0
 
         # 4) Normalize style: penalize high complexity
-        # Let’s define style_score = (pylint_score/10) * (1 / (1 + avg_cc/10))
+        # Let's define style_score = (pylint_score/10) * (1 / (1 + avg_cc/10))
         style_score = (pylint_score / 10) * (1 / (1 + avg_cc / 10))
 
         # Clean up
@@ -386,3 +369,138 @@ if __name__ == "__main__":
             
             print(f"Parsed results: passed={passed}, failed={failed}")
             return passed, failed
+
+    def _get_judge_analysis(self, prompt: str, generated: Dict[str, str], scores: Dict[str, Any]) -> Dict[str, Any]:
+        """Get detailed analysis from judge LLM about code quality and reasoning."""
+        # Build analysis prompt
+        analysis_prompt = f"""
+You are an expert code evaluator. Given the following prompt:
+
+PROMPT:
+{prompt}
+
+And the following model responses with their evaluation results:
+
+"""
+        
+        for name, code in generated.items():
+            score_info = scores.get(name, {})
+            analysis_prompt += f"""
+{name}:
+CODE:
+{code}
+
+EVALUATION RESULTS:
+- Status: {score_info.get('status', 'unknown')}
+- Final Score: {score_info.get('score', 0)}
+- Tests: {score_info.get('tests', {})}
+- Style Score: {score_info.get('style', {}).get('style_score', 0)}
+- Pylint Score: {score_info.get('style', {}).get('pylint_score', 0)}
+- Complexity: {score_info.get('style', {}).get('average_complexity', 0)}
+- Security Issues: {score_info.get('lint', {}).get('security_issues', 0)}
+
+"""
+
+        analysis_prompt += """
+Analyze each code submission and provide detailed reasoning about:
+1. Code quality and readability
+2. Test performance and edge case handling
+3. Security considerations
+4. Style and maintainability
+5. Overall strengths and weaknesses
+
+Return your analysis in this exact JSON format:
+
+{
+  "gpt-4": {
+    "code_quality": "Detailed analysis of code structure and readability",
+    "test_performance": "Analysis of how well the code handles edge cases",
+    "security_analysis": "Security considerations and potential issues",
+    "style_assessment": "Code style, maintainability, and best practices",
+    "strengths": "List of specific strengths",
+    "weaknesses": "List of specific weaknesses"
+  },
+  "gpt-3.5-turbo": {
+    "code_quality": "Detailed analysis of code structure and readability",
+    "test_performance": "Analysis of how well the code handles edge cases", 
+    "security_analysis": "Security considerations and potential issues",
+    "style_assessment": "Code style, maintainability, and best practices",
+    "strengths": "List of specific strengths",
+    "weaknesses": "List of specific weaknesses"
+  },
+  "winner": "model_name",
+  "winner_reasoning": "Detailed explanation of why this code is the best",
+  "loser_reasoning": "Detailed explanation of why the losing code fell short"
+}
+
+Only return valid JSON.
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model=self.judge_model,
+                messages=[{"role": "user", "content": analysis_prompt}],
+                temperature=0
+            )
+            
+            judgment = response.choices[0].message.content
+            print("\n🧠 Judge Analysis Output:\n", judgment)
+            
+            return self._extract_json(judgment)
+        except Exception as e:
+            print(f"Error getting judge analysis: {e}")
+            return {}
+
+    def _display_reasoning(self, scores: Dict[str, Any], judge_analysis: Dict[str, Any]):
+        """Display detailed reasoning from the judge in a readable format."""
+        print("\n" + "="*60)
+        print("🏆 JUDGE'S DETAILED CODE ANALYSIS")
+        print("="*60)
+        
+        winner = judge_analysis.get("winner")
+        winner_reasoning = judge_analysis.get("winner_reasoning", "")
+        loser_reasoning = judge_analysis.get("loser_reasoning", "")
+        
+        # Display individual model analysis
+        for model_name, model_data in judge_analysis.items():
+            if model_name in ["winner", "winner_reasoning", "loser_reasoning"]:
+                continue
+                
+            print(f"\n📊 {model_name.upper()} ANALYSIS:")
+            
+            # Show evaluation metrics
+            score_info = scores.get(model_name, {})
+            if score_info:
+                print(f"   Final Score: {score_info.get('score', 'N/A')}")
+                tests = score_info.get('tests', {})
+                print(f"   Tests: {tests.get('passed', 0)} passed, {tests.get('failed', 0)} failed")
+                style = score_info.get('style', {})
+                print(f"   Style Score: {style.get('style_score', 'N/A')}")
+                print(f"   Pylint: {style.get('pylint_score', 'N/A')}/10")
+                print(f"   Complexity: {style.get('average_complexity', 'N/A')}")
+                print(f"   Security Issues: {score_info.get('lint', {}).get('security_issues', 'N/A')}")
+            
+            # Show detailed analysis
+            if isinstance(model_data, dict):
+                for category, analysis in model_data.items():
+                    if analysis and category in ['code_quality', 'test_performance', 'security_analysis', 'style_assessment', 'strengths', 'weaknesses']:
+                        print(f"   {category.replace('_', ' ').title()}: {analysis}")
+        
+        # Display winner/loser reasoning
+        if winner and winner_reasoning:
+            print(f"\n🥇 WINNER ({winner}):")
+            print(f"   {winner_reasoning}")
+        
+        if loser_reasoning:
+            # Find the loser (the model that's not the winner)
+            loser = None
+            for model_name in scores.keys():
+                if model_name != winner:
+                    loser = model_name
+                    break
+            
+            if loser:
+                print(f"\n🥈 RUNNER-UP ({loser}):")
+                print(f"   {loser_reasoning}")
+        
+        print("\n" + "="*60)
